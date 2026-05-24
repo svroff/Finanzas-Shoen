@@ -44,6 +44,10 @@ export function App() {
   const totalLimitSpent = Object.values(analysis.limitStatus).reduce((total, status) => total + status.spent, 0);
 
   function importRaw(raw: RawMovement[]) {
+    if (raw.length === 0) {
+      setMessage("No he detectado movimientos. Revisa el formato o prueba con CSV/Excel, que son más fiables que PDF.");
+      return;
+    }
     const classified = raw.map(classifyMovement);
     setMovements(classified);
     window.localStorage.setItem(storageKey, JSON.stringify(classified));
@@ -52,6 +56,7 @@ export function App() {
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
+    setMessage(`Leyendo ${file.name}...`);
     try {
       importRaw(await parseFile(file));
     } catch (error) {
@@ -113,7 +118,14 @@ export function App() {
           <label className="fileButton">
             <FileUp size={18} />
             <span>Importar CSV / Excel / PDF</span>
-            <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={(event) => handleFile(event.target.files?.[0])} />
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls,.pdf"
+              onChange={(event) => {
+                void handleFile(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }}
+            />
           </label>
 
           <textarea
