@@ -1,4 +1,4 @@
-# FINANCE_TRACKING_V1
+# Finanzas-Shoen
 
 App web local para control mensual de gastos personales de Sergi.
 
