@@ -19,6 +19,8 @@
    Do instead: design import, display, and storage around masking/removal of IBANs, card numbers, DNI, long references, and contract identifiers.
 2. **[2026-05-24] Bank PDFs often include transaction amount plus trailing balance**
    Do instead: parse PDF rows by removing dates and all money tokens, choose transaction amount before balance, and verify with a real PDF upload path.
+3. **[2026-05-24] Real bank PDFs may split glyphs and stack one movement across nearby Y rows**
+   Do instead: reconstruct PDF text from x/y coordinates, merge nearby row fragments, normalize compact dates, skip balance-only and financing-info rows, and never commit raw bank PDFs.
 
 ## User Directives
 1. **[2026-05-24] Sergi wants skills announced before work**

@@ -36,5 +36,14 @@ describe("classifyMovement", () => {
     expect(result.labels).toContain("AHORRO");
     expect(result.countsAsConsumption).toBe(false);
   });
-});
 
+  it("recognizes compact savings labels extracted from bank PDFs", () => {
+    const emergencyFund = classifyMovement(movement("TRANSFERENCIAS FONDOEMERGENCIA", -100));
+    const investment = classifyMovement(movement("TRANSFERENCIAS AHORROSYPPI", -600));
+
+    expect(emergencyFund.category).toBe("Ahorro / inversión");
+    expect(emergencyFund.countsAsConsumption).toBe(false);
+    expect(investment.category).toBe("Ahorro / inversión");
+    expect(investment.countsAsConsumption).toBe(false);
+  });
+});

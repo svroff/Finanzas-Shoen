@@ -16,7 +16,7 @@ const rules: Rule[] = [
     type: "AHORRO",
     labels: ["AHORRO"],
     countsAsConsumption: false,
-    patterns: [/FONDO EMERGENCIA/i, /AHORROS? Y PPI/i, /MYINVESTOR/i, /\bBTC\b/i, /\bORO\b/i, /INDEXAD/i]
+    patterns: [/FONDO\s?EMERGENCIA/i, /AHORROS?\s?Y\s?PPI/i, /MYINVESTOR/i, /\bBTC\b/i, /\bORO\b/i, /INDEXAD/i]
   },
   {
     category: "Movimientos internos",
@@ -151,4 +151,3 @@ function makeMovement(
 function guessMerchant(description: string): string {
   return description.split(/\s{2,}| - | \* /)[0]?.trim() || description.trim();
 }
-

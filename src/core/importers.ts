@@ -6,6 +6,7 @@ type GenericRow = Record<string, unknown>;
 type TextItemLike = {
   str: string;
   transform?: number[];
+  width?: number;
 };
 
 export async function parseFile(file: File): Promise<RawMovement[]> {
@@ -66,7 +67,7 @@ export async function parsePdf(file: File): Promise<RawMovement[]> {
     const page = await doc.getPage(pageNumber);
     const content = await page.getTextContent();
     const textItems = content.items.flatMap((item) =>
-      "str" in item ? [{ str: item.str, transform: "transform" in item ? [...item.transform] : undefined }] : []
+      "str" in item ? [{ str: item.str, transform: "transform" in item ? [...item.transform] : undefined, width: "width" in item ? item.width : undefined }] : []
     );
     lines.push(...textItemsToLines(textItems));
   }
@@ -92,18 +93,45 @@ export function textItemsToLines(items: TextItemLike[]): string[] {
     rows.set(rowKey, [...(rows.get(rowKey) ?? []), item]);
   }
 
-  return [...rows.entries()]
-    .sort(([a], [b]) => b - a)
-    .map(([, rowItems]) =>
-      dedupeTextItems(rowItems)
-        .sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0))
-        .map((item) => item.str.trim())
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s{2,}/g, " ")
-        .trim()
-    )
+  return clusterPdfRows([...rows.entries()].sort(([a], [b]) => b - a))
+    .map((cluster) => cluster.map(([, rowItems]) => buildPdfRowText(rowItems)).filter(Boolean).join(" ").replace(/\s{2,}/g, " ").trim())
     .filter(Boolean);
+}
+
+function clusterPdfRows(rows: Array<[number, TextItemLike[]]>): Array<Array<[number, TextItemLike[]]>> {
+  const clusters: Array<Array<[number, TextItemLike[]]>> = [];
+  for (const row of rows) {
+    const current = clusters[clusters.length - 1];
+    const previousY = current?.[current.length - 1]?.[0];
+    if (current && previousY !== undefined && Math.abs(previousY - row[0]) <= 9) {
+      current.push(row);
+    } else {
+      clusters.push([row]);
+    }
+  }
+  return clusters;
+}
+
+function buildPdfRowText(rowItems: TextItemLike[]): string {
+  const sorted = dedupeTextItems(rowItems).sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0));
+  if (sorted.every((item) => item.width === undefined)) {
+    return sorted
+      .map((item) => item.str.trim())
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  return sorted.reduce((line, item, index) => {
+    const text = item.str.trim();
+    if (!text) return line;
+    if (index === 0 || !line) return text;
+    const previous = sorted[index - 1];
+    const previousEnd = (previous.transform?.[4] ?? 0) + (previous.width ?? 0);
+    const gap = (item.transform?.[4] ?? 0) - previousEnd;
+    return `${line}${gap <= 3 ? "" : " "}${text}`;
+  }, "");
 }
 
 function splitPotentialMovementRows(text: string): string {
@@ -206,15 +234,28 @@ function pickAmount(row: GenericRow): number {
 }
 
 function parseManualLine(line: string, index: number, source: MovementSource): RawMovement | null {
-  const amountMatches = findAmounts(line);
+  const normalizedLine = source === "pdf" ? normalizePdfLineForParsing(line) : line;
+  const amountMatches = findAmounts(normalizedLine);
   if (amountMatches.length === 0) return null;
-  const dateMatches = findDates(line);
+  if (source === "pdf" && isPdfInformationalFinanceRow(normalizedLine, amountMatches)) return null;
+  const dateMatches = findDates(normalizedLine);
+  if (source === "pdf" && dateMatches.length === 0) return null;
   const date = normalizeDate(dateMatches[0]?.text ?? "", index);
   const transactionAmount = chooseTransactionAmount(amountMatches, source);
-  const description = buildDescription(line, dateMatches, amountMatches);
+  const description = buildDescription(normalizedLine, dateMatches, amountMatches);
   const unsignedAmount = Math.abs(parseAmount(transactionAmount.text));
   const amount = inferSignedAmount(transactionAmount.text, unsignedAmount, description, source);
   return { date, description, merchant: description, amount, source };
+}
+
+function normalizePdfLineForParsing(line: string): string {
+  return line.replace(/(\d{1,2}\/\d{2})(?=\d{1,2}\/\d{2})/g, "$1 ");
+}
+
+function isPdfInformationalFinanceRow(line: string, amounts: Array<{ text: string; index: number }>): boolean {
+  const compact = line.replace(/\s+/g, "").toUpperCase();
+  if (/%/.test(line) && /(MASTFITNESS|FINANCI|INTERES|TIN|TAE)/.test(compact)) return true;
+  return amounts.length >= 3 && /(CUOTAMENSUAL|COMISIONPOR|MASTFITNESS|PENDIENTE|DEUDA|FINANCI)/.test(compact);
 }
 
 function dedupeTextItems(items: TextItemLike[]): TextItemLike[] {
@@ -275,11 +316,12 @@ function inferSignedAmount(rawAmount: string, unsignedAmount: number, descriptio
 }
 
 function looksLikeIncome(description: string): boolean {
-  return /\b(nomina|nómina|sueldo|bizum recibido|abono|devolucion|devolución|cashback|venta|ingreso|transferencia recibida)\b/i.test(description);
+  return /(nomina|nómina|sueldo|bizum\s?recibido|abono|devolucion|devolución|cashback|venta|used\s?good|ingreso|transferencia\s?recibida)/i.test(description);
 }
 
 function cleanDescription(value: string): string {
   return value
+    .replace(/\bE\s*UR\b|\bEUR\b/gi, " ")
     .replace(/^[\s;|,\t-]+/, "")
     .replace(/[\s;|,\t-]+$/, "")
     .replace(/\s{2,}/g, " ")
