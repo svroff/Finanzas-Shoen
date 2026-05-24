@@ -36,13 +36,13 @@ export function parseCsv(text: string): RawMovement[] {
     throw new Error(`CSV no legible: ${headerParsed.errors[0].message}`);
   }
   const headerMovements = rowsToMovements(headerParsed.data, "csv");
-  if (headerMovements.length > 0) return headerMovements;
+  if (headerMovements.length > 0) return dedupeMovements(headerMovements);
 
   const rowParsed = Papa.parse<string[]>(text, {
     header: false,
     skipEmptyLines: true
   });
-  return arrayRowsToMovements(rowParsed.data, "csv");
+  return dedupeMovements(arrayRowsToMovements(rowParsed.data, "csv"));
 }
 
 export async function parseExcel(file: File): Promise<RawMovement[]> {
@@ -52,7 +52,7 @@ export async function parseExcel(file: File): Promise<RawMovement[]> {
   const objects = dataRows.map((row: Row) =>
     Object.fromEntries(row.map((value: Row[number], index: number) => [normalizedHeaders[index] ?? `col_${index}`, value ?? ""]))
   );
-  return rowsToMovements(objects, "excel");
+  return dedupeMovements(rowsToMovements(objects, "excel"));
 }
 
 export async function parsePdf(file: File): Promise<RawMovement[]> {
@@ -75,12 +75,13 @@ export async function parsePdf(file: File): Promise<RawMovement[]> {
 }
 
 export function parseManualText(text: string, source: MovementSource = "manual"): RawMovement[] {
-  return splitPotentialMovementRows(text)
+  const movements = splitPotentialMovementRows(text)
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line, index) => parseManualLine(line, index, source))
     .filter((movement): movement is RawMovement => Boolean(movement));
+  return dedupeMovements(movements);
 }
 
 export function textItemsToLines(items: TextItemLike[]): string[] {
@@ -94,7 +95,7 @@ export function textItemsToLines(items: TextItemLike[]): string[] {
   return [...rows.entries()]
     .sort(([a], [b]) => b - a)
     .map(([, rowItems]) =>
-      rowItems
+      dedupeTextItems(rowItems)
         .sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0))
         .map((item) => item.str.trim())
         .filter(Boolean)
@@ -106,7 +107,12 @@ export function textItemsToLines(items: TextItemLike[]): string[] {
 }
 
 function splitPotentialMovementRows(text: string): string {
-  return text.replace(/\s+(?=\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s)/g, "\n");
+  const dateAhead = /\s+(?=\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s)/g;
+  return text.replace(dateAhead, (separator, offset) => {
+    const lastBreak = Math.max(text.lastIndexOf("\n", offset), text.lastIndexOf("\r", offset));
+    const currentRowSoFar = text.slice(lastBreak + 1, offset);
+    return amountPattern().test(currentRowSoFar) ? "\n" : separator;
+  });
 }
 
 function rowsToMovements(rows: GenericRow[], source: MovementSource): RawMovement[] {
@@ -200,14 +206,76 @@ function pickAmount(row: GenericRow): number {
 }
 
 function parseManualLine(line: string, index: number, source: MovementSource): RawMovement | null {
-  const amountMatch = line.match(/[-+]?\d{1,9}(?:[.,]\d{2})\s?€?$/);
-  if (!amountMatch) return null;
-  const amount = parseAmount(amountMatch[0]);
-  const left = line.slice(0, amountMatch.index).trim();
-  const dateMatch = left.match(/\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b/);
-  const date = normalizeDate(dateMatch?.[0] ?? "", index);
-  const description = cleanDescription(left.replace(dateMatch?.[0] ?? "", "")) || cleanDescription(left);
+  const amountMatches = findAmounts(line);
+  if (amountMatches.length === 0) return null;
+  const dateMatches = findDates(line);
+  const date = normalizeDate(dateMatches[0]?.text ?? "", index);
+  const transactionAmount = chooseTransactionAmount(amountMatches, source);
+  const description = buildDescription(line, dateMatches, amountMatches);
+  const unsignedAmount = Math.abs(parseAmount(transactionAmount.text));
+  const amount = inferSignedAmount(transactionAmount.text, unsignedAmount, description, source);
   return { date, description, merchant: description, amount, source };
+}
+
+function dedupeTextItems(items: TextItemLike[]): TextItemLike[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const text = item.str.trim();
+    const x = Math.round(item.transform?.[4] ?? 0);
+    const y = Math.round(item.transform?.[5] ?? 0);
+    const key = `${x}|${y}|${text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dedupeMovements(movements: RawMovement[]): RawMovement[] {
+  const seen = new Set<string>();
+  return movements.filter((movement) => {
+    const key = `${movement.date}|${movement.description.toUpperCase()}|${movement.amount.toFixed(2)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function amountPattern(): RegExp {
+  return /[-+]?(?:\d{1,3}(?:\.\d{3})+|\d{1,9})(?:[.,]\d{2})\s?€?/g;
+}
+
+function findAmounts(line: string): Array<{ text: string; index: number }> {
+  return [...line.matchAll(amountPattern())].map((match) => ({ text: match[0], index: match.index ?? 0 }));
+}
+
+function findDates(line: string): Array<{ text: string; index: number }> {
+  return [...line.matchAll(/\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b/g)].map((match) => ({
+    text: match[0],
+    index: match.index ?? 0
+  }));
+}
+
+function chooseTransactionAmount(amounts: Array<{ text: string; index: number }>, source: MovementSource): { text: string; index: number } {
+  const signed = amounts.find((amount) => /^[+-]/.test(amount.text.trim()));
+  if (signed) return signed;
+  return source === "pdf" && amounts.length > 1 ? amounts[0] : amounts[amounts.length - 1];
+}
+
+function buildDescription(line: string, dates: Array<{ text: string; index: number }>, amounts: Array<{ text: string; index: number }>): string {
+  const removable = [...dates, ...amounts].sort((a, b) => b.index - a.index);
+  const cleaned = removable.reduce((current, token) => current.slice(0, token.index) + current.slice(token.index + token.text.length), line);
+  return cleanDescription(cleaned);
+}
+
+function inferSignedAmount(rawAmount: string, unsignedAmount: number, description: string, source: MovementSource): number {
+  if (/^\s*-/.test(rawAmount)) return -unsignedAmount;
+  if (/^\s*\+/.test(rawAmount)) return unsignedAmount;
+  if (source !== "pdf") return parseAmount(rawAmount);
+  return looksLikeIncome(description) ? unsignedAmount : -unsignedAmount;
+}
+
+function looksLikeIncome(description: string): boolean {
+  return /\b(nomina|nómina|sueldo|bizum recibido|abono|devolucion|devolución|cashback|venta|ingreso|transferencia recibida)\b/i.test(description);
 }
 
 function cleanDescription(value: string): string {

@@ -29,6 +29,45 @@ describe("PDF/text import helpers", () => {
 
     expect(movements.map((movement) => movement.description)).toEqual(["MERCADONA", "OPENAI"]);
   });
+
+  it("deduplicates repeated PDF text overlays on the same visual row", () => {
+    const lines = textItemsToLines([
+      { str: "01/05/2026", transform: [1, 0, 0, 1, 20, 700] },
+      { str: "MERCADONA", transform: [1, 0, 0, 1, 110, 700] },
+      { str: "MERCADONA", transform: [1, 0, 0, 1, 110, 700] },
+      { str: "45,50", transform: [1, 0, 0, 1, 420, 700] },
+      { str: "45,50", transform: [1, 0, 0, 1, 420, 700] }
+    ]);
+
+    expect(lines).toEqual(["01/05/2026 MERCADONA 45,50"]);
+  });
+
+  it("uses the transaction amount instead of the trailing balance in PDF-like rows", () => {
+    const movements = parseManualText("01/05/2026 02/05/2026 MERCADONA 45,50 1.234,56", "pdf");
+
+    expect(movements).toEqual([
+      {
+        date: "2026-05-01",
+        description: "MERCADONA",
+        merchant: "MERCADONA",
+        amount: -45.5,
+        source: "pdf"
+      }
+    ]);
+  });
+
+  it("keeps probable PDF income rows positive when no explicit sign exists", () => {
+    const movements = parseManualText("30/05/2026 30/05/2026 NOMINA EMPRESA 1.800,00 2.900,00", "pdf");
+
+    expect(movements[0].description).toBe("NOMINA EMPRESA");
+    expect(movements[0].amount).toBe(1800);
+  });
+
+  it("deduplicates identical movements produced by repeated PDF rows", () => {
+    const movements = parseManualText("01/05/2026 MERCADONA 45,50\n01/05/2026 MERCADONA 45,50", "pdf");
+
+    expect(movements).toHaveLength(1);
+  });
 });
 
 describe("CSV import", () => {
@@ -64,5 +103,11 @@ describe("CSV import", () => {
 
     expect(movements).toHaveLength(2);
     expect(movements[0].description).toBe("MERCADONA");
+  });
+
+  it("deduplicates identical CSV rows to avoid double-counting contaminated exports", () => {
+    const movements = parseCsv("Fecha;Concepto;Importe\n01/05/2026;MERCADONA;-45,50\n01/05/2026;MERCADONA;-45,50");
+
+    expect(movements).toHaveLength(1);
   });
 });

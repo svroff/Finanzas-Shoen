@@ -17,6 +17,8 @@
 ## Domain Behavior Guardrails
 1. **[2026-05-24] Finance app must protect sensitive banking data**
    Do instead: design import, display, and storage around masking/removal of IBANs, card numbers, DNI, long references, and contract identifiers.
+2. **[2026-05-24] Bank PDFs often include transaction amount plus trailing balance**
+   Do instead: parse PDF rows by removing dates and all money tokens, choose transaction amount before balance, and verify with a real PDF upload path.
 
 ## User Directives
 1. **[2026-05-24] Sergi wants skills announced before work**
