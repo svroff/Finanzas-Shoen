@@ -9,6 +9,7 @@ import {
   Save,
   ShieldCheck,
   Trash2,
+  UploadCloud,
   WalletCards
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -16,26 +17,16 @@ import { analyzeMovements } from "./core/analytics";
 import { classifyMovement } from "./core/classifier";
 import { parseFile, parseManualText } from "./core/importers";
 import { buildComparisonLines, buildObjectiveReading, formatEuro, reviewReason } from "./core/report";
-import type { ClassifiedMovement, RawMovement } from "./core/types";
-
-const sampleText = `01/05 Sueldo 2500,00
-02/05 FONDO EMERGENCIA -100,00
-03/05 MERCADONA -45,50
-04/05 OPENAI CHATGPT PLUS -106,74
-05/05 WWW.AMAZON.ES MARKETPLACE -174,00
-06/05 STARBUCKS -4,20
-07/05 INSTANT GAMING -39,99
-08/05 YOUTUBE PREMIUM -12,99
-09/05 TRANSFERENCIA ENTRE MIS CUENTAS -300,00`;
+import type { CategorySummary, ClassifiedMovement, RawMovement } from "./core/types";
 
 const storageKey = "finance_tracking_v1_movements";
 
 export function App() {
-  const [rawText, setRawText] = useState(sampleText);
+  const [rawText, setRawText] = useState("");
   const [movements, setMovements] = useState<ClassifiedMovement[]>(() => loadMovements());
-  const [periodStart, setPeriodStart] = useState("2026-05-01");
-  const [periodEnd, setPeriodEnd] = useState("2026-05-31");
-  const [message, setMessage] = useState("Datos de ejemplo listos. Importa un archivo o pega movimientos para empezar.");
+  const [periodStart, setPeriodStart] = useState(currentMonthStart());
+  const [periodEnd, setPeriodEnd] = useState(currentMonthEnd());
+  const [message, setMessage] = useState("Sin movimientos importados. Importa CSV/Excel/PDF o pega movimientos para empezar.");
 
   const analysis = useMemo(
     () =>
@@ -49,6 +40,8 @@ export function App() {
   const periodLabel = `${formatDate(periodStart)} - ${formatDate(periodEnd)}`;
   const reviewCount = analysis.reviewableMovements.length;
   const topFocus = Object.entries(analysis.limitStatus).filter(([, status]) => status.status !== "dentro de rango");
+  const hasMovements = movements.length > 0;
+  const totalLimitSpent = Object.values(analysis.limitStatus).reduce((total, status) => total + status.spent, 0);
 
   function importRaw(raw: RawMovement[]) {
     const classified = raw.map(classifyMovement);
@@ -99,10 +92,10 @@ export function App() {
         <div className="monthCard">
           <span className="monthLabel">Consumo real</span>
           <strong>{formatEuro(analysis.realConsumption)}</strong>
-          <p>Proyección: {formatEuro(analysis.projection.realConsumptionAtPeriodEnd)}</p>
+          <p>{hasMovements ? `Proyección: ${formatEuro(analysis.projection.realConsumptionAtPeriodEnd)}` : "Esperando movimientos reales"}</p>
           <div className="monthSignal">
-            {topFocus.length > 0 ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
-            {topFocus.length > 0 ? `${topFocus.length} focos activos` : "Sin alertas relevantes"}
+            {!hasMovements ? <UploadCloud size={18} /> : topFocus.length > 0 ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+            {!hasMovements ? "Sin datos importados" : topFocus.length > 0 ? `${topFocus.length} focos activos` : "Sin alertas relevantes"}
           </div>
         </div>
       </header>
@@ -123,7 +116,12 @@ export function App() {
             <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={(event) => handleFile(event.target.files?.[0])} />
           </label>
 
-          <textarea value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
+          <textarea
+            value={rawText}
+            onChange={(event) => setRawText(event.target.value)}
+            placeholder={"Pega movimientos reales aquí, por ejemplo:\n01/05 Comercio -12,90\n02/05 Nómina 1800,00"}
+            spellCheck={false}
+          />
           <div className="dateGrid">
             <label>
               Inicio
@@ -152,6 +150,20 @@ export function App() {
         </aside>
 
         <section className="dashboard">
+          {!hasMovements ? (
+            <section className="emptyState">
+              <UploadCloud size={34} />
+              <div>
+                <p className="sectionKicker">Inicio limpio</p>
+                <h2>Sin movimientos importados</h2>
+                <p>
+                  La app no calcula ingresos, ahorro, gastos ni alertas hasta que cargues movimientos reales. CSV o Excel tienen prioridad;
+                  PDF y texto pegado quedan como apoyo.
+                </p>
+              </div>
+            </section>
+          ) : null}
+
           <div className="kpis">
             <Metric label="Ingresos" value={formatEuro(analysis.totalIncome)} tone="income" />
             <Metric label="Salidas" value={formatEuro(analysis.totalOutflows)} tone="outflow" />
@@ -181,6 +193,27 @@ export function App() {
                 </div>
               ))}
             </div>
+          </section>
+
+          <section className="visualGrid">
+            <section className="chartPanel">
+              <div className="panelHeader">
+                <div>
+                  <p className="sectionKicker">Visual</p>
+                  <h2>Distribución del consumo</h2>
+                </div>
+              </div>
+              <DonutChart summaries={analysis.categorySummaries} hasMovements={hasMovements} />
+            </section>
+            <section className="chartPanel">
+              <div className="panelHeader">
+                <div>
+                  <p className="sectionKicker">Visual</p>
+                  <h2>Focos frente a límite</h2>
+                </div>
+              </div>
+              <LimitBars statuses={analysis.limitStatus} hasMovements={hasMovements && totalLimitSpent > 0} />
+            </section>
           </section>
 
           <section className="report">
@@ -311,13 +344,99 @@ function TablePanel({ title, children }: { title: string; children: React.ReactN
 function loadMovements(): ClassifiedMovement[] {
   try {
     const stored = window.localStorage.getItem(storageKey);
-    return stored ? (JSON.parse(stored) as ClassifiedMovement[]) : parseManualText(sampleText).map(classifyMovement);
+    return stored ? (JSON.parse(stored) as ClassifiedMovement[]) : [];
   } catch {
-    return parseManualText(sampleText).map(classifyMovement);
+    return [];
   }
 }
 
 function formatDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function currentMonthStart(): string {
+  const now = new Date();
+  return formatInputDate(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function currentMonthEnd(): string {
+  const now = new Date();
+  return formatInputDate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+}
+
+function formatInputDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function DonutChart({ summaries, hasMovements }: { summaries: CategorySummary[]; hasMovements: boolean }) {
+  if (!hasMovements || summaries.length === 0) {
+    return <div className="emptyChart">Sin datos reales para graficar.</div>;
+  }
+
+  const total = summaries.reduce((sum, item) => sum + item.amount, 0);
+  let offset = 25;
+  const colors = ["#3f776a", "#bf7b43", "#44788e", "#9a6a96", "#b35b5b", "#65758b", "#8b7a42"];
+
+  return (
+    <div className="donutWrap">
+      <svg className="donut" viewBox="0 0 42 42" role="img" aria-label="Distribución del consumo por categoría">
+        <circle className="donutBase" cx="21" cy="21" r="15.9" />
+        {summaries.slice(0, 7).map((summary, index) => {
+          const dash = total > 0 ? (summary.amount / total) * 100 : 0;
+          const segment = (
+            <circle
+              className="donutSegment"
+              cx="21"
+              cy="21"
+              key={summary.category}
+              r="15.9"
+              stroke={colors[index]}
+              strokeDasharray={`${dash} ${100 - dash}`}
+              strokeDashoffset={offset}
+            />
+          );
+          offset -= dash;
+          return segment;
+        })}
+        <text x="21" y="20" textAnchor="middle" className="donutValue">
+          {formatEuro(total)}
+        </text>
+        <text x="21" y="24" textAnchor="middle" className="donutLabel">
+          consumo
+        </text>
+      </svg>
+      <div className="legend">
+        {summaries.slice(0, 6).map((summary, index) => (
+          <div className="legendItem" key={summary.category}>
+            <span style={{ background: colors[index] }} />
+            <p>{summary.category}</p>
+            <strong>{formatEuro(summary.amount)}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LimitBars({ statuses, hasMovements }: { statuses: ReturnType<typeof analyzeMovements>["limitStatus"]; hasMovements: boolean }) {
+  if (!hasMovements) {
+    return <div className="emptyChart">Los límites aparecerán cuando haya gasto clasificado.</div>;
+  }
+
+  return (
+    <div className="limitBars">
+      {Object.entries(statuses).map(([name, status]) => (
+        <div className="limitBarRow" key={name}>
+          <div>
+            <span>{name}</span>
+            <strong>{formatEuro(status.spent)}</strong>
+          </div>
+          <div className="progressTrack">
+            <div className="progressBar" style={{ width: `${Math.min(100, (status.spent / status.limit) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

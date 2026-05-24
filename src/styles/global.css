@@ -305,6 +305,33 @@ input[type="date"] {
   gap: 20px;
 }
 
+.emptyState,
+.chartPanel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(31, 45, 61, 0.07);
+}
+
+.emptyState {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  padding: 22px;
+}
+
+.emptyState svg {
+  color: #44788e;
+  flex: 0 0 auto;
+}
+
+.emptyState p:last-child {
+  color: #5c6b7c;
+  line-height: 1.55;
+  margin: 8px 0 0;
+  max-width: 820px;
+}
+
 .kpis {
   display: grid;
   gap: 12px;
@@ -359,6 +386,114 @@ input[type="date"] {
 .report,
 .tablePanel {
   padding: 18px;
+}
+
+.visualGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+}
+
+.chartPanel {
+  min-width: 0;
+  padding: 18px;
+}
+
+.emptyChart {
+  align-items: center;
+  background: #f7fafc;
+  border: 1px dashed #cbd6e2;
+  border-radius: 8px;
+  color: #65758b;
+  display: flex;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 240px;
+  text-align: center;
+}
+
+.donutWrap {
+  align-items: center;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.donut {
+  height: 220px;
+  overflow: visible;
+  width: 220px;
+}
+
+.donutBase {
+  fill: transparent;
+  stroke: #e7edf2;
+  stroke-width: 6;
+}
+
+.donutSegment {
+  fill: transparent;
+  stroke-width: 6;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.donutValue {
+  fill: #18222f;
+  font-size: 0.18rem;
+  font-weight: 900;
+}
+
+.donutLabel {
+  fill: #6b7b8f;
+  font-size: 0.12rem;
+  font-weight: 800;
+}
+
+.legend,
+.limitBars {
+  display: grid;
+  gap: 10px;
+}
+
+.legendItem {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+}
+
+.legendItem span {
+  border-radius: 99px;
+  height: 10px;
+  width: 10px;
+}
+
+.legendItem p,
+.limitBarRow span {
+  color: #405166;
+  font-size: 0.85rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.legendItem strong,
+.limitBarRow strong {
+  color: #172331;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.limitBarRow {
+  display: grid;
+  gap: 8px;
+}
+
+.limitBarRow > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
 
 .limitGrid {
@@ -527,6 +662,7 @@ tbody tr:hover {
 @media (max-width: 1180px) {
   .hero,
   .workspace,
+  .visualGrid,
   .splitPanels {
     grid-template-columns: 1fr;
   }
@@ -565,9 +701,18 @@ tbody tr:hover {
   .dateGrid,
   .actionGrid,
   .kpis,
+  .donutWrap,
   .limitGrid,
   .insightList {
     grid-template-columns: 1fr;
+  }
+
+  .emptyState {
+    align-items: flex-start;
+  }
+
+  .donut {
+    justify-self: center;
   }
 
   .heroMeta {
