@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { analyzeMovements } from "../core/analytics";
+import { analyzeMovements, isInsidePeriod } from "../core/analytics";
 import { classifyMovement } from "../core/classifier";
 import { parseFile, parseManualText } from "../core/importers";
 import { applyMovementPatch, buildDailySeries, filterMovements, type MovementFilters, type MovementPatch } from "../core/session";
@@ -39,8 +39,12 @@ export function useFinanceWorkspace() {
     [movements, periodEnd, periodStart]
   );
 
-  const visibleMovements = useMemo(() => filterMovements(movements, filters), [filters, movements]);
-  const dailySeries = useMemo(() => buildDailySeries(movements), [movements]);
+  const periodMovements = useMemo(
+    () => movements.filter((movement) => isInsidePeriod(movement.date, { periodStart, periodEnd })),
+    [movements, periodEnd, periodStart]
+  );
+  const visibleMovements = useMemo(() => filterMovements(periodMovements, filters), [filters, periodMovements]);
+  const dailySeries = useMemo(() => buildDailySeries(periodMovements), [periodMovements]);
 
   async function importFile(file: File | undefined) {
     if (!file) return;

@@ -18,8 +18,9 @@ const aprilBaseline: Record<string, number> = {
 };
 
 export function analyzeMovements(movements: ClassifiedMovement[], period: AnalysisPeriod): FinanceAnalysis {
-  const totalIncome = round(sum(movements.filter((m) => m.amount > 0).map((m) => m.amount)));
-  const outflows = movements.filter((m) => m.amount < 0);
+  const periodMovements = movements.filter((movement) => isInsidePeriod(movement.date, period));
+  const totalIncome = round(sum(periodMovements.filter((m) => m.amount > 0).map((m) => m.amount)));
+  const outflows = periodMovements.filter((m) => m.amount < 0);
   const totalOutflows = round(sum(outflows.map((m) => Math.abs(m.amount))));
   const totalSavings = round(sum(outflows.filter((m) => m.type === "AHORRO").map((m) => Math.abs(m.amount))));
   const internalTransfers = round(sum(outflows.filter((m) => m.type === "INTERNO").map((m) => Math.abs(m.amount))));
@@ -42,6 +43,10 @@ export function analyzeMovements(movements: ClassifiedMovement[], period: Analys
     limitStatus,
     projection
   };
+}
+
+export function isInsidePeriod(date: string, period: AnalysisPeriod): boolean {
+  return date >= period.periodStart && date <= period.periodEnd;
 }
 
 export function compareWithApril(category: string, current: number): "mejor" | "peor" | "similar" | "sin base" {

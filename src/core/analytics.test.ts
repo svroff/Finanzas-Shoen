@@ -29,4 +29,24 @@ describe("analyzeMovements", () => {
     expect(analysis.limitStatus["Amazon / compras online revisables"].status).toBe("superado");
     expect(analysis.projection.realConsumptionAtPeriodEnd).toBeGreaterThan(650);
   });
+
+  it("only analyzes movements inside the selected period", () => {
+    const mixedMonths: RawMovement[] = [
+      { date: "2026-04-06", description: "AHORROS Y PPI", amount: -600, source: "manual" },
+      { date: "2026-05-04", description: "AHORROS Y PPI", amount: -600, source: "manual" },
+      { date: "2026-04-08", description: "AMAZON", amount: -174, source: "manual" },
+      { date: "2026-05-08", description: "AMAZON", amount: -90, source: "manual" }
+    ];
+
+    const april = analyzeMovements(mixedMonths.map(classifyMovement), {
+      periodStart: "2026-04-01",
+      periodEnd: "2026-04-30",
+      today: "2026-04-30"
+    });
+
+    expect(april.totalOutflows).toBe(774);
+    expect(april.totalSavings).toBe(600);
+    expect(april.realConsumption).toBe(174);
+    expect(april.topExpenses.map((movement) => movement.date)).toEqual(["2026-04-06", "2026-04-08"]);
+  });
 });
