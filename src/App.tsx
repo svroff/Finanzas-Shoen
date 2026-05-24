@@ -1,4 +1,16 @@
-import { AlertTriangle, BarChart3, FileUp, Lock, RefreshCw, Save, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  FileUp,
+  Lock,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  Trash2,
+  WalletCards
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { analyzeMovements } from "./core/analytics";
 import { classifyMovement } from "./core/classifier";
@@ -34,6 +46,9 @@ export function App() {
       }),
     [movements, periodEnd, periodStart]
   );
+  const periodLabel = `${formatDate(periodStart)} - ${formatDate(periodEnd)}`;
+  const reviewCount = analysis.reviewableMovements.length;
+  const topFocus = Object.entries(analysis.limitStatus).filter(([, status]) => status.status !== "dentro de rango");
 
   function importRaw(raw: RawMovement[]) {
     const classified = raw.map(classifyMovement);
@@ -59,45 +74,55 @@ export function App() {
 
   return (
     <main className="shell">
-      <header className="topbar">
-        <div>
+      <header className="hero">
+        <div className="heroCopy">
           <p className="eyebrow">Nexus · operador financiero local</p>
-          <h1>FINANCE_TRACKING_V1</h1>
+          <h1>Finanzas Shoen</h1>
+          <p className="heroText">
+            Control mensual frío y privado: importar, limpiar, clasificar y detectar focos revisables sin tomar decisiones por Sergi.
+          </p>
+          <div className="heroMeta">
+            <span>
+              <CalendarDays size={16} />
+              {periodLabel}
+            </span>
+            <span>
+              <ShieldCheck size={16} />
+              local-first
+            </span>
+            <span>
+              <Lock size={16} />
+              datos sensibles enmascarados
+            </span>
+          </div>
         </div>
-        <div className="privacy">
-          <Lock size={18} />
-          <span>Local-first · datos sensibles enmascarados</span>
+        <div className="monthCard">
+          <span className="monthLabel">Consumo real</span>
+          <strong>{formatEuro(analysis.realConsumption)}</strong>
+          <p>Proyección: {formatEuro(analysis.projection.realConsumptionAtPeriodEnd)}</p>
+          <div className="monthSignal">
+            {topFocus.length > 0 ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+            {topFocus.length > 0 ? `${topFocus.length} focos activos` : "Sin alertas relevantes"}
+          </div>
         </div>
       </header>
 
-      <section className="toolbar">
-        <label className="fileButton">
-          <FileUp size={18} />
-          <span>Importar CSV / Excel / PDF</span>
-          <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={(event) => handleFile(event.target.files?.[0])} />
-        </label>
-        <button onClick={() => importRaw(parseManualText(rawText))}>
-          <RefreshCw size={18} />
-          Clasificar texto
-        </button>
-        <button onClick={() => window.localStorage.setItem(storageKey, JSON.stringify(movements))}>
-          <Save size={18} />
-          Guardar local
-        </button>
-        <button className="danger" onClick={clearData}>
-          <Trash2 size={18} />
-          Vaciar
-        </button>
-      </section>
-
-      <p className="status">{message}</p>
-
       <section className="workspace">
         <aside className="importPanel">
-          <div className="panelHeader">
-            <h2>Entrada manual</h2>
-            <span>CSV si existe, antes que PDF</span>
+          <div className="importHeader">
+            <div>
+              <p className="sectionKicker">Entrada</p>
+              <h2>Movimientos</h2>
+            </div>
+            <span className="sourceBadge">CSV preferente</span>
           </div>
+
+          <label className="fileButton">
+            <FileUp size={18} />
+            <span>Importar CSV / Excel / PDF</span>
+            <input type="file" accept=".csv,.xlsx,.xls,.pdf" onChange={(event) => handleFile(event.target.files?.[0])} />
+          </label>
+
           <textarea value={rawText} onChange={(event) => setRawText(event.target.value)} spellCheck={false} />
           <div className="dateGrid">
             <label>
@@ -109,30 +134,70 @@ export function App() {
               <input value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} type="date" />
             </label>
           </div>
+          <div className="actionGrid">
+            <button className="primaryAction" onClick={() => importRaw(parseManualText(rawText))}>
+              <RefreshCw size={18} />
+              Clasificar texto
+            </button>
+            <button onClick={() => window.localStorage.setItem(storageKey, JSON.stringify(movements))}>
+              <Save size={18} />
+              Guardar
+            </button>
+            <button className="danger" onClick={clearData}>
+              <Trash2 size={18} />
+              Vaciar
+            </button>
+          </div>
+          <p className="status">{message}</p>
         </aside>
 
         <section className="dashboard">
           <div className="kpis">
-            <Metric label="Ingresos" value={formatEuro(analysis.totalIncome)} />
-            <Metric label="Salidas" value={formatEuro(analysis.totalOutflows)} />
-            <Metric label="Ahorro/inversión" value={formatEuro(analysis.totalSavings)} />
-            <Metric label="Consumo real" value={formatEuro(analysis.realConsumption)} accent />
+            <Metric label="Ingresos" value={formatEuro(analysis.totalIncome)} tone="income" />
+            <Metric label="Salidas" value={formatEuro(analysis.totalOutflows)} tone="outflow" />
+            <Metric label="Ahorro/inversión" value={formatEuro(analysis.totalSavings)} tone="saving" />
+            <Metric label="Revisables" value={String(reviewCount)} tone="review" />
           </div>
 
-          <section className="band">
+          <section className="focusBand">
             <div className="panelHeader">
-              <h2>Estado por límites</h2>
-              <BarChart3 size={20} />
+              <div>
+                <p className="sectionKicker">Control mensual</p>
+                <h2>Estado por límites</h2>
+              </div>
+              <BarChart3 size={22} />
             </div>
             <div className="limitGrid">
               {Object.entries(analysis.limitStatus).map(([name, status]) => (
                 <div className="limitItem" key={name}>
-                  <div>
+                  <div className="limitTop">
                     <strong>{name}</strong>
-                    <span>{formatEuro(status.spent)} / {formatEuro(status.limit)}</span>
+                    <em className={status.status.replace(/\s/g, "-")}>{status.status}</em>
                   </div>
-                  <em className={status.status.replace(/\s/g, "-")}>{status.status}</em>
+                  <span>{formatEuro(status.spent)} de {formatEuro(status.limit)}</span>
+                  <div className="progressTrack">
+                    <div className="progressBar" style={{ width: `${Math.min(100, (status.spent / status.limit) * 100)}%` }} />
+                  </div>
                 </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="report">
+            <div className="panelHeader">
+              <div>
+                <p className="sectionKicker">Lectura objetiva</p>
+                <h2>Focos visibles</h2>
+              </div>
+              <AlertTriangle size={22} />
+            </div>
+            <div className="insightList">
+              {buildObjectiveReading(analysis).map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              <p>Ritmo estimado de cierre: {formatEuro(analysis.projection.realConsumptionAtPeriodEnd)}.</p>
+              {buildComparisonLines(analysis).map((line) => (
+                <p key={line}>{line}</p>
               ))}
             </div>
           </section>
@@ -153,10 +218,10 @@ export function App() {
                   {analysis.categorySummaries.map((summary) => (
                     <tr key={summary.category}>
                       <td>{summary.category}</td>
-                      <td>{formatEuro(summary.amount)}</td>
+                      <td className="money">{formatEuro(summary.amount)}</td>
                       <td>{summary.percentageOfConsumption}%</td>
                       <td>{summary.movementCount}</td>
-                      <td>{formatEuro(summary.averageTicket)}</td>
+                      <td className="money">{formatEuro(summary.averageTicket)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -178,29 +243,13 @@ export function App() {
                     <tr key={movement.id}>
                       <td>{movement.date}</td>
                       <td>{movement.safeMerchant}</td>
-                      <td>{formatEuro(Math.abs(movement.amount))}</td>
+                      <td className="money">{formatEuro(Math.abs(movement.amount))}</td>
                       <td>{reviewReason(movement)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </TablePanel>
-          </section>
-
-          <section className="report">
-            <div className="panelHeader">
-              <h2>Lectura objetiva</h2>
-              <AlertTriangle size={20} />
-            </div>
-            <ul>
-              {buildObjectiveReading(analysis).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-              <li>Ritmo estimado de cierre: {formatEuro(analysis.projection.realConsumptionAtPeriodEnd)}.</li>
-              {buildComparisonLines(analysis).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
           </section>
 
           <TablePanel title="Movimientos clasificados">
@@ -220,8 +269,10 @@ export function App() {
                     <td>{movement.date}</td>
                     <td>{movement.safeDescription}</td>
                     <td>{movement.category}</td>
-                    <td>{movement.labels.join(" / ")}</td>
-                    <td>{formatEuro(movement.amount)}</td>
+                    <td>
+                      <span className="labelPill">{movement.labels.join(" / ")}</span>
+                    </td>
+                    <td className="money">{formatEuro(movement.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -233,9 +284,10 @@ export function App() {
   );
 }
 
-function Metric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone: "income" | "outflow" | "saving" | "review" }) {
   return (
-    <div className={accent ? "metric accent" : "metric"}>
+    <div className={`metric ${tone}`}>
+      <WalletCards size={20} />
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -246,7 +298,10 @@ function TablePanel({ title, children }: { title: string; children: React.ReactN
   return (
     <section className="tablePanel">
       <div className="panelHeader">
-        <h2>{title}</h2>
+        <div>
+          <p className="sectionKicker">Detalle</p>
+          <h2>{title}</h2>
+        </div>
       </div>
       <div className="tableScroll">{children}</div>
     </section>
@@ -262,3 +317,7 @@ function loadMovements(): ClassifiedMovement[] {
   }
 }
 
+function formatDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}
