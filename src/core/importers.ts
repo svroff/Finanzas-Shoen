@@ -27,15 +27,22 @@ export async function parseFile(file: File): Promise<RawMovement[]> {
 }
 
 export function parseCsv(text: string): RawMovement[] {
-  const parsed = Papa.parse<GenericRow>(text, {
+  const headerParsed = Papa.parse<GenericRow>(text, {
     header: true,
     skipEmptyLines: true,
     transformHeader: normalizeHeader
   });
-  if (parsed.errors.length > 0) {
-    throw new Error(`CSV no legible: ${parsed.errors[0].message}`);
+  if (headerParsed.errors.length > 0) {
+    throw new Error(`CSV no legible: ${headerParsed.errors[0].message}`);
   }
-  return rowsToMovements(parsed.data, "csv");
+  const headerMovements = rowsToMovements(headerParsed.data, "csv");
+  if (headerMovements.length > 0) return headerMovements;
+
+  const rowParsed = Papa.parse<string[]>(text, {
+    header: false,
+    skipEmptyLines: true
+  });
+  return arrayRowsToMovements(rowParsed.data, "csv");
 }
 
 export async function parseExcel(file: File): Promise<RawMovement[]> {
@@ -106,12 +113,33 @@ function rowsToMovements(rows: GenericRow[], source: MovementSource): RawMovemen
   const movements: RawMovement[] = [];
   rows.forEach((row, index) => {
       const normalized = normalizeRowKeys(row);
-      const date = pick(normalized, ["fecha", "date", "f_operacion", "fecha_operacion"]) || "";
+      const date = pick(normalized, [
+        "fecha",
+        "date",
+        "f_operacion",
+        "fecha_operacion",
+        "fecha_de_operacion",
+        "fecha_valor",
+        "f_valor",
+        "data",
+        "dia"
+      ]) || "";
       const description =
-        pick(normalized, ["concepto", "descripcion", "description", "movimiento", "comercio", "merchant"]) || "";
+        pick(normalized, [
+          "concepto",
+          "concepto_movimiento",
+          "descripcion",
+          "descripcion_operacion",
+          "description",
+          "movimiento",
+          "detalle",
+          "comercio",
+          "merchant",
+          "beneficiario",
+          "ordenante"
+        ]) || "";
       const merchant = pick(normalized, ["comercio", "merchant", "beneficiario"]) || description;
-      const amountRaw = pick(normalized, ["importe", "amount", "valor", "cargo_abono", "euros"]) || "";
-      const amount = parseAmount(amountRaw);
+      const amount = pickAmount(normalized);
       if (!description || Number.isNaN(amount)) return;
       movements.push({
         date: normalizeDate(date, index),
@@ -122,6 +150,53 @@ function rowsToMovements(rows: GenericRow[], source: MovementSource): RawMovemen
       });
     });
   return movements;
+}
+
+function arrayRowsToMovements(rows: string[][], source: MovementSource): RawMovement[] {
+  const movements: RawMovement[] = [];
+  rows.forEach((row, index) => {
+    const cells = row.map((cell) => String(cell ?? "").trim()).filter(Boolean);
+    const dateIndex = cells.findIndex((cell) => parseDateValue(cell));
+    const amountIndex = findAmountIndex(cells);
+    if (dateIndex === -1 || amountIndex === -1) return;
+
+    const description = cells
+      .filter((_, cellIndex) => cellIndex !== dateIndex && cellIndex !== amountIndex)
+      .join(" ")
+      .trim();
+    if (!description) return;
+    movements.push({
+      date: normalizeDate(cells[dateIndex], index),
+      description,
+      merchant: description,
+      amount: parseAmount(cells[amountIndex]),
+      source
+    });
+  });
+  return movements;
+}
+
+function pickAmount(row: GenericRow): number {
+  const directAmount = pick(row, [
+    "importe",
+    "importe_e",
+    "importe_eur",
+    "importe_euros",
+    "amount",
+    "valor",
+    "cargo_abono",
+    "euros",
+    "saldo_movimiento"
+  ]);
+  if (directAmount) return parseAmount(directAmount);
+
+  const debit = pick(row, ["cargo", "debe", "debito", "debit", "withdrawal", "salida"]);
+  if (debit) return -Math.abs(parseAmount(debit));
+
+  const credit = pick(row, ["abono", "haber", "credito", "credit", "deposit", "entrada"]);
+  if (credit) return Math.abs(parseAmount(credit));
+
+  return Number.NaN;
 }
 
 function parseManualLine(line: string, index: number, source: MovementSource): RawMovement | null {
@@ -157,19 +232,33 @@ function pick(row: GenericRow, keys: string[]): string {
 }
 
 function parseAmount(value: string): number {
+  const negative = /^\(.*\)$/.test(value) || /^\s*-/.test(value);
   const cleaned = value
-    .replace(/[€\s]/g, "")
+    .replace(/[€\s()]/g, "")
     .replace(/\.(?=\d{3}(?:\D|$))/g, "")
     .replace(",", ".");
-  return Number(cleaned);
+  const parsed = Number(cleaned);
+  if (Number.isNaN(parsed)) return Number.NaN;
+  return negative ? -Math.abs(parsed) : parsed;
 }
 
 function normalizeDate(value: string, fallbackIndex: number): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const match = value.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+  const match = parseDateValue(value);
   if (match) {
     const year = match[3] ? (match[3].length === 2 ? `20${match[3]}` : match[3]) : "2026";
     return `${year}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
   }
   return `2026-05-${String(Math.min(28, fallbackIndex + 1)).padStart(2, "0")}`;
+}
+
+function parseDateValue(value: string): RegExpMatchArray | null {
+  return String(value).trim().match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?$/);
+}
+
+function findAmountIndex(cells: string[]): number {
+  for (let index = cells.length - 1; index >= 0; index -= 1) {
+    if (!Number.isNaN(parseAmount(cells[index])) && /[+-]?\(?\d/.test(cells[index])) return index;
+  }
+  return -1;
 }

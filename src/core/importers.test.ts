@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseManualText, textItemsToLines } from "./importers";
+import { parseCsv, parseManualText, textItemsToLines } from "./importers";
 
 describe("PDF/text import helpers", () => {
   it("keeps PDF text items on separate visual rows before parsing movements", () => {
@@ -25,3 +25,38 @@ describe("PDF/text import helpers", () => {
   });
 });
 
+describe("CSV import", () => {
+  it("parses semicolon-separated bank CSV with Spanish headers", () => {
+    const movements = parseCsv("Fecha operación;Concepto;Importe (€)\n01/05/2026;MERCADONA;-45,50\n02/05/2026;Nómina;1800,00");
+
+    expect(movements).toEqual([
+      {
+        date: "2026-05-01",
+        description: "MERCADONA",
+        merchant: "MERCADONA",
+        amount: -45.5,
+        source: "csv"
+      },
+      {
+        date: "2026-05-02",
+        description: "Nómina",
+        merchant: "Nómina",
+        amount: 1800,
+        source: "csv"
+      }
+    ]);
+  });
+
+  it("parses bank CSVs that split charges and deposits into debit and credit columns", () => {
+    const movements = parseCsv("Fecha;Descripción;Cargo;Abono\n01/05/2026;STARBUCKS;4,20;\n02/05/2026;Bizum recibido;;25,00");
+
+    expect(movements.map((movement) => movement.amount)).toEqual([-4.2, 25]);
+  });
+
+  it("parses headerless rows when they contain date, description and amount", () => {
+    const movements = parseCsv("01/05/2026;MERCADONA;-45,50\n02/05/2026;OPENAI;-20,00");
+
+    expect(movements).toHaveLength(2);
+    expect(movements[0].description).toBe("MERCADONA");
+  });
+});
