@@ -23,6 +23,12 @@ describe("PDF/text import helpers", () => {
     expect(movements[0].description).toBe("MERCADONA");
     expect(movements[1].description).toBe("OPENAI");
   });
+
+  it("cleans semicolon separators from pasted bank-like rows", () => {
+    const movements = parseManualText("01/05/2026;MERCADONA;-45,50\n02/05/2026;OPENAI;-20,00");
+
+    expect(movements.map((movement) => movement.description)).toEqual(["MERCADONA", "OPENAI"]);
+  });
 });
 
 describe("CSV import", () => {

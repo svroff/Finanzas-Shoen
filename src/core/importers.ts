@@ -206,8 +206,16 @@ function parseManualLine(line: string, index: number, source: MovementSource): R
   const left = line.slice(0, amountMatch.index).trim();
   const dateMatch = left.match(/\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b/);
   const date = normalizeDate(dateMatch?.[0] ?? "", index);
-  const description = left.replace(dateMatch?.[0] ?? "", "").trim() || left;
+  const description = cleanDescription(left.replace(dateMatch?.[0] ?? "", "")) || cleanDescription(left);
   return { date, description, merchant: description, amount, source };
+}
+
+function cleanDescription(value: string): string {
+  return value
+    .replace(/^[\s;|,\t-]+/, "")
+    .replace(/[\s;|,\t-]+$/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function normalizeRowKeys(row: GenericRow): GenericRow {
